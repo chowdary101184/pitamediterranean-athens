@@ -1,12 +1,15 @@
 window.STORE_HOURS_FIREBASE_CONFIG = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyDBxNpTkAAc_IV5GBUgPNvWSr1ORwdLLq4",
+  authDomain: "test-pitamediterranean-athens.firebaseapp.com",
+  projectId: "test-pitamediterranean-athens",
+  storageBucket: "test-pitamediterranean-athens.firebasestorage.app",
+  messagingSenderId: "185953610881",
+  appId: "1:185953610881:web:be7cd7e59506745aa67180",
+  measurementId: "G-CSLML4ESBB"
 };
 
 window.STORE_HOURS_ADMIN_EMAILS = [
-  "your-admin-email@example.com"
+  "ciwa09@gmail.com"
 ];
 
 window.STORE_HOURS_FIREBASE_DOC_PATH = "stores/pitamediterranean-athens/app/schedule";
