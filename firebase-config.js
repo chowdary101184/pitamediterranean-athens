@@ -10,7 +10,8 @@ window.STORE_HOURS_FIREBASE_CONFIG = {
 
 window.STORE_HOURS_ADMIN_EMAILS = [
   "ciwa09@gmail.com",
-  "avenkatac@gmail.com"
+  "avenkatac@gmail.com",
+  "shali.chowdary@gmail.com"
 ];
 
 window.STORE_HOURS_FIREBASE_DOC_PATH = "stores/pitamediterranean-athens/app/schedule";
