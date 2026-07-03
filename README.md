@@ -22,22 +22,98 @@ This repo is ready to deploy from the repository root. In GitHub, open **Setting
 
 The app uses Firebase Firestore as the source of truth. Employee and shift edits are stored remotely so everyone sees the same schedule. Browser local storage is not used for schedule data.
 
-1. Create a Firebase project.
-2. In Firebase, create a Web app and copy the Firebase config.
-3. Enable **Firestore Database**.
-4. Enable **Authentication > Sign-in method > Google**.
-5. In **Authentication > Settings > Authorized domains**, add:
+### Create the Firebase project
+
+1. Go to [Firebase Console](https://console.firebase.google.com/).
+2. Sign in with a Google account, or create one if you do not already have one.
+3. Click **Create a project** or **Add project**.
+4. Enter a project name, for example `pitamediterranean-athens`.
+5. Google Analytics is optional for this app. You can disable it to keep setup simpler.
+6. Finish project creation and open the new Firebase project.
+
+### Register this web app
+
+1. From the Firebase project overview, click the web icon, usually shown as `</>`.
+2. Enter an app nickname, for example `store-hours-admin`.
+3. Firebase Hosting is optional because this app can be hosted with GitHub Pages.
+4. Click **Register app**.
+5. Copy the Firebase config object shown by Firebase.
+6. Paste those values into `firebase-config.js`.
+
+The config should look like this shape:
+
+```js
+window.STORE_HOURS_FIREBASE_CONFIG = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT_ID.firebasestorage.app",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID",
+  measurementId: "YOUR_MEASUREMENT_ID"
+};
+```
+
+### Create the Firestore database
+
+1. In Firebase, open **Firestore Database**.
+2. Click **Create database**.
+3. Choose **Firestore Native** mode if asked.
+4. Choose a location close to your store or users. For this project, `nam5` is fine.
+5. Start in production mode if Firebase asks for a security mode.
+6. Finish database creation.
+
+### Enable Google admin sign-in
+
+1. In Firebase, open **Authentication**.
+2. Click **Get started** if this is the first time opening Authentication.
+3. Open **Sign-in method**.
+4. Enable **Google** as a provider.
+5. Choose a support email and save.
+6. Open **Authentication > Settings > Authorized domains**.
+7. Add only the domain names, not full URLs:
 
 ```text
 chowdary101184.github.io
 localhost
 ```
 
-6. Confirm `firebase-config.js` has your Firebase web config and admin email.
-7. Confirm `firestore.rules` has the same admin email.
-8. In Firebase Firestore **Rules**, paste the contents of `firestore.rules` and publish.
-9. Commit and push the Firebase files.
-10. Open the GitHub Pages site, sign in with Google, then click **Publish shared schedule** once.
+### Add admin emails
+
+Add every admin email in `firebase-config.js`:
+
+```js
+window.STORE_HOURS_ADMIN_EMAILS = [
+  "ciwa09@gmail.com",
+  "manager@example.com"
+];
+```
+
+Then add the same emails in `firestore.rules`:
+
+```js
+allow write: if request.auth != null
+  && request.auth.token.email in [
+    "ciwa09@gmail.com",
+    "manager@example.com"
+  ];
+```
+
+The email list must match in both files. `firebase-config.js` controls the admin UI, while `firestore.rules` protects the database.
+
+### Publish Firestore rules
+
+1. In Firebase, open **Firestore Database > Rules**.
+2. Replace the existing rules with the contents of `firestore.rules`.
+3. Click **Publish**.
+
+### Publish the first schedule
+
+1. Commit and push `index.html`, `firebase-config.js`, and `firestore.rules`.
+2. Open the GitHub Pages site.
+3. Sign in with one of the admin Google accounts.
+4. Click **Publish shared schedule** once.
+5. After that, any employee or shift edit is saved to Firestore and becomes visible to everyone.
 
 Public visitors can read the latest schedule. Only the admin email in `firebase-config.js` and `firestore.rules` can write changes.
 
