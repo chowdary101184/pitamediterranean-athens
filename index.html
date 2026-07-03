@@ -797,6 +797,30 @@
       display: block;
     }
 
+    .cloud-only {
+      display: none;
+    }
+
+    body:not(.cloud) .cloud-only {
+      display: none !important;
+    }
+
+    body.cloud .cloud-only {
+      display: inline-flex;
+    }
+
+    body.cloud .cloud-only.grid {
+      display: grid;
+    }
+
+    body.cloud .cloud-only.block {
+      display: block;
+    }
+
+    body.cloud .local-only {
+      display: none;
+    }
+
     .settings-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -1187,6 +1211,7 @@
           </div>
           <div class="panel-body">
             <div class="toolbar-row">
+              <button class="cloud-only admin-only" id="publishCloudBtn">Publish shared schedule</button>
               <button id="exportBtn">Export</button>
               <button class="import-label">
                 Import
@@ -1208,11 +1233,17 @@
       </div>
       <form id="loginForm">
         <div class="modal-body">
-          <div class="notice">Default demo passcode: 1234</div>
-          <label>
-            Passcode
-            <input type="password" id="loginPin" autocomplete="current-password" required>
-          </label>
+          <div class="notice cloud-only block">Shared schedule mode uses Google sign-in. Only configured admin emails can edit.</div>
+          <div class="cloud-only grid">
+            <button class="primary" type="button" id="firebaseLoginBtn">Sign in with Google</button>
+          </div>
+          <div class="local-only">
+            <div class="notice">Default demo passcode: 1234</div>
+            <label>
+              Passcode
+              <input type="password" id="loginPin" autocomplete="current-password">
+            </label>
+          </div>
         </div>
         <div class="modal-footer">
           <button type="button" data-close-modal="loginModal">Cancel</button>
@@ -1332,6 +1363,92 @@
 
   <div class="toast hidden" id="toast" role="status"></div>
 
+  <script src="./firebase-config.js"></script>
+  <script>
+    window.storeHoursCloudReady = new Promise(resolve => {
+      window.resolveStoreHoursCloud = resolve;
+    });
+  </script>
+  <script type="module">
+    const firebaseConfig = window.STORE_HOURS_FIREBASE_CONFIG || {};
+    const adminEmails = (window.STORE_HOURS_ADMIN_EMAILS || [])
+      .map(email => String(email).trim().toLowerCase())
+      .filter(Boolean);
+    const docPath = window.STORE_HOURS_FIREBASE_DOC_PATH || "stores/pitamediterranean-athens/app/schedule";
+    const requiredKeys = ["apiKey", "authDomain", "projectId", "appId"];
+    const hasFirebaseConfig = requiredKeys.every(key => {
+      const value = firebaseConfig[key];
+      return typeof value === "string" && value.trim() && !value.includes("YOUR_");
+    });
+
+    if (!hasFirebaseConfig) {
+      window.resolveStoreHoursCloud(null);
+    } else {
+      try {
+        const [{ initializeApp }, firestore, authApi] = await Promise.all([
+          import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js"),
+          import("https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js"),
+          import("https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js")
+        ]);
+        const {
+          getFirestore,
+          doc,
+          onSnapshot,
+          setDoc,
+          serverTimestamp
+        } = firestore;
+        const {
+          getAuth,
+          GoogleAuthProvider,
+          signInWithPopup,
+          signOut,
+          onAuthStateChanged,
+          setPersistence,
+          browserLocalPersistence
+        } = authApi;
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+        await setPersistence(auth, browserLocalPersistence);
+        const scheduleRef = doc(db, docPath);
+
+        window.resolveStoreHoursCloud({
+          configured: true,
+          adminEmails,
+          isAdmin(user) {
+            return !!user?.email && adminEmails.includes(user.email.toLowerCase());
+          },
+          onAuth(callback) {
+            return onAuthStateChanged(auth, callback);
+          },
+          onData(callback, onError) {
+            return onSnapshot(scheduleRef, snapshot => {
+              callback(snapshot.exists() ? snapshot.data() : null);
+            }, onError);
+          },
+          async saveData(data) {
+            await setDoc(scheduleRef, {
+              ...data,
+              updatedAt: serverTimestamp(),
+              updatedBy: auth.currentUser?.email || null
+            });
+          },
+          signIn() {
+            return signInWithPopup(auth, provider);
+          },
+          signOut() {
+            return signOut(auth);
+          }
+        });
+      } catch (error) {
+        console.error("Firebase shared mode failed to start.", error);
+        window.resolveStoreHoursCloud(null);
+      }
+    }
+  </script>
+
   <script>
     const STORAGE_KEY = "store-hours-manager-v1";
     const ADMIN_KEY = "store-hours-admin-session";
@@ -1372,6 +1489,8 @@
       employeeForm: document.getElementById("employeeForm"),
       shiftForm: document.getElementById("shiftForm"),
       deleteShiftBtn: document.getElementById("deleteShiftBtn"),
+      firebaseLoginBtn: document.getElementById("firebaseLoginBtn"),
+      publishCloudBtn: document.getElementById("publishCloudBtn"),
       importInput: document.getElementById("importInput")
     };
 
@@ -1380,6 +1499,11 @@
     let isAdmin = sessionStorage.getItem(ADMIN_KEY) === "true";
     let selectedEmployeeId = null;
     let lastFocused = null;
+    let cloudBackend = null;
+    let cloudMode = "local";
+    let cloudUser = null;
+    let cloudApplyingRemote = false;
+    let cloudSaveTimer = null;
 
     function seedData() {
       const start = startOfWeek(new Date());
@@ -1453,7 +1577,38 @@
     }
 
     function saveData() {
+      saveLocalData();
+      queueCloudSave();
+    }
+
+    function saveLocalData() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+    }
+
+    function schedulePayload() {
+      return {
+        version: db.version || 1,
+        settings: db.settings,
+        employees: db.employees,
+        shifts: db.shifts
+      };
+    }
+
+    function isValidScheduleData(data) {
+      return !!data && !!data.settings && Array.isArray(data.employees) && Array.isArray(data.shifts);
+    }
+
+    function queueCloudSave() {
+      if (cloudMode !== "cloud" || !cloudBackend || !isAdmin || cloudApplyingRemote) return;
+      clearTimeout(cloudSaveTimer);
+      cloudSaveTimer = setTimeout(async () => {
+        try {
+          await cloudBackend.saveData(schedulePayload());
+        } catch (error) {
+          console.error(error);
+          showToast("Shared save failed. Check Firebase rules.");
+        }
+      }, 250);
     }
 
     function startOfWeek(date) {
@@ -1546,6 +1701,13 @@
     }
 
     function setAdmin(next) {
+      if (cloudMode === "cloud") {
+        if (!next && cloudBackend) {
+          cloudBackend.signOut();
+        }
+        return;
+      }
+
       isAdmin = next;
       if (isAdmin) {
         sessionStorage.setItem(ADMIN_KEY, "true");
@@ -1577,8 +1739,12 @@
     }
 
     function render() {
+      const modeLabel = cloudMode === "cloud"
+        ? (isAdmin ? "Cloud admin" : "Cloud view")
+        : (isAdmin ? "Admin mode" : "Public view");
       els.body.classList.toggle("admin", isAdmin);
-      els.modePill.textContent = isAdmin ? "Admin mode" : "Public view";
+      els.body.classList.toggle("cloud", cloudMode === "cloud");
+      els.modePill.textContent = modeLabel;
       els.modePill.classList.toggle("admin", isAdmin);
       els.loginBtn.classList.toggle("hidden", isAdmin);
 
@@ -2140,6 +2306,53 @@
       document.getElementById("shiftEnd").value = timeFromMinutes(end);
     }
 
+    async function connectCloudBackend() {
+      if (!window.storeHoursCloudReady) return;
+
+      try {
+        const backend = await window.storeHoursCloudReady;
+        if (!backend) {
+          render();
+          return;
+        }
+
+        cloudBackend = backend;
+        cloudMode = "cloud";
+        isAdmin = false;
+        sessionStorage.removeItem(ADMIN_KEY);
+        render();
+
+        cloudBackend.onAuth(user => {
+          cloudUser = user;
+          isAdmin = cloudBackend.isAdmin(user);
+          render();
+          if (user && !isAdmin) {
+            showToast("Signed in, but this email is not an admin.");
+          }
+        });
+
+        cloudBackend.onData(data => {
+          if (!isValidScheduleData(data)) return;
+          cloudApplyingRemote = true;
+          db = {
+            version: data.version || 1,
+            settings: data.settings,
+            employees: data.employees,
+            shifts: data.shifts
+          };
+          saveLocalData();
+          render();
+          cloudApplyingRemote = false;
+        }, error => {
+          console.error(error);
+          showToast("Could not load shared schedule. Using local data.");
+        });
+      } catch (error) {
+        console.error(error);
+        showToast("Shared mode could not start. Using local data.");
+      }
+    }
+
     document.getElementById("prevWeek").addEventListener("click", () => {
       currentWeekStart = addDays(currentWeekStart, -7);
       render();
@@ -2158,6 +2371,19 @@
     document.getElementById("printBtn").addEventListener("click", () => window.print());
     document.getElementById("loginBtn").addEventListener("click", () => openModal("loginModal"));
     document.getElementById("logoutBtn").addEventListener("click", () => setAdmin(false));
+    els.firebaseLoginBtn.addEventListener("click", async () => {
+      if (!cloudBackend) {
+        alert("Firebase is not configured yet.");
+        return;
+      }
+      try {
+        await cloudBackend.signIn();
+        closeModal("loginModal");
+      } catch (error) {
+        console.error(error);
+        alert("Could not sign in with Google.");
+      }
+    });
     document.getElementById("addEmployeeBtn").addEventListener("click", () => openEmployeeForm());
     document.getElementById("quickAddShiftBtn").addEventListener("click", () => {
       const selected = employeeById(selectedEmployeeId);
@@ -2167,6 +2393,16 @@
     document.getElementById("copyWeekBtn").addEventListener("click", copyWeekToNext);
     document.getElementById("clearWeekBtn").addEventListener("click", clearCurrentWeek);
     document.getElementById("exportBtn").addEventListener("click", exportData);
+    els.publishCloudBtn.addEventListener("click", async () => {
+      if (!cloudBackend || !isAdmin) return;
+      try {
+        await cloudBackend.saveData(schedulePayload());
+        showToast("Shared schedule published.");
+      } catch (error) {
+        console.error(error);
+        alert("Could not publish to Firebase. Check Firestore rules.");
+      }
+    });
     document.getElementById("resetBtn").addEventListener("click", () => {
       if (!confirm("Reset to demo data in this browser?")) return;
       localStorage.removeItem(STORAGE_KEY);
@@ -2251,6 +2487,7 @@
 
     document.getElementById("loginForm").addEventListener("submit", event => {
       event.preventDefault();
+      if (cloudMode === "cloud") return;
       const pin = document.getElementById("loginPin").value;
       if (pin !== db.settings.adminPin) {
         alert("Incorrect passcode.");
@@ -2356,7 +2593,8 @@
     });
 
     render();
-    saveData();
+    saveLocalData();
+    connectCloudBackend();
   </script>
 </body>
 </html>
