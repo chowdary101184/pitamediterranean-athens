@@ -20,7 +20,7 @@ This repo is ready to deploy from the repository root. In GitHub, open **Setting
 
 ## Remote data with Firebase
 
-The app uses Firebase Firestore as the source of truth. Employee and shift edits are stored remotely so everyone sees the same schedule. Browser local storage is not used for schedule data.
+The app uses Firebase Firestore as the source of truth. Employee and shift edits are stored remotely so everyone sees the same schedule. Browser local storage is not used for schedule data. Firebase remembers the Google admin sign-in across refreshes, but schedule data remains remote-only.
 
 ### Create the Firebase project
 

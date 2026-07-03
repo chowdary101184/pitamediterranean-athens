@@ -1388,7 +1388,7 @@
           signOut,
           onAuthStateChanged,
           setPersistence,
-          inMemoryPersistence
+          browserLocalPersistence
         } = authApi;
 
         const app = initializeApp(firebaseConfig);
@@ -1396,7 +1396,7 @@
         const auth = getAuth(app);
         const provider = new GoogleAuthProvider();
         provider.setCustomParameters({ prompt: "select_account" });
-        await setPersistence(auth, inMemoryPersistence);
+        await setPersistence(auth, browserLocalPersistence);
         const scheduleRef = doc(db, docPath);
 
         window.resolveStoreHoursCloud({
